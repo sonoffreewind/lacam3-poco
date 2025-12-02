@@ -28,7 +28,7 @@ function main(config_files...)
     solver_options = get(config, "solver_options", [])
     maps = get(config, "maps", Vector{String}())
     date_str = replace(string(Dates.now()), ":" => "-")
-    root_dir = joinpath(get(config, "root", joinpath(pwd(), "..", "data", "exp")), date_str)
+    root_dir = joinpath(get(config, "root", joinpath(pwd(), "..", "data", "exp", "heuristic")), date_str)
     !isdir(root_dir) && mkpath(root_dir)
 
     # save configuration file
@@ -133,6 +133,10 @@ function main(config_files...)
             :search_iteration => 0,
             :num_high_level_node => 0,
             :num_low_level_node => 0,
+            :updategraph_time_us => 0,
+            :cal_mvc_time_us => 0,
+            :poco_call_count => 0,
+            :poco_result => 0,
         )
         if isfile(output_file)
             for line in readlines(output_file)
@@ -167,6 +171,14 @@ function main(config_files...)
                 !isnothing(m) && (row[:num_high_level_node] = parse(Int, m[1]))
                 m = match(r"num_low_level_node=(\d+)", line)
                 !isnothing(m) && (row[:num_low_level_node] = parse(Int, m[1]))
+                m = match(r"updategraph_time_us=(\d+)", line)
+                !isnothing(m) && (row[:updategraph_time_us] = parse(Int, m[1]))
+                m = match(r"cal_mvc_time_us=(\d+)", line)
+                !isnothing(m) && (row[:cal_mvc_time_us] = parse(Int, m[1]))
+                m = match(r"poco_call_count=(\d+)", line)
+                !isnothing(m) && (row[:poco_call_count] = parse(Int, m[1]))
+                m = match(r"poco_result=(\d+)", line)
+                !isnothing(m) && (row[:poco_result] = parse(Int, m[1]))
             end
             rm(output_file)
         end
@@ -187,4 +199,162 @@ function main(config_files...)
     CSV.write(result_file, result)
     println()
     rm(tmp_dir; recursive = true)
+end
+
+function aggregate_results(main_dir=".")
+    """
+    Traverse directory to find all result.csv files, calculate averages and save to main.csv
+    """
+    # Define column types
+    text_cols = ["map_name", "solver"]
+    numeric_cols_standard = [
+        "makespan", "soc", "sum_of_loss", "cost_initial_solution", 
+        "comp_time_initial_solution", "num_low_level_node", "num_high_level_node"
+    ]
+        
+    # Special processing columns
+    orig_col_x = "updategraph_time_us"
+    orig_col_y = "cal_mvc_time_us"
+    col_x = "updategraph_time_ms"
+    col_y = "cal_mvc_time_ms"
+    col_z = "poco_result"
+    col_t = "poco_call_count"
+    
+    # Required columns (all solvers must have)
+    required_columns = vcat(text_cols, numeric_cols_standard)
+    
+    # Optional columns (only POCO solvers have)
+    optional_cols = [ orig_col_x, orig_col_y, col_z, col_t]
+
+    ori_columns = vcat(text_cols, numeric_cols_standard, optional_cols)
+    final_columns = vcat(text_cols, numeric_cols_standard, [col_x, col_y, col_z, col_t])
+    
+    results = []
+    
+    println("Starting search for result.csv files...")
+    
+    # Traverse all subdirectories
+    for (root, dirs, files) in walkdir(main_dir)
+        if "result.csv" in files
+            file_path = joinpath(root, "result.csv")
+            try
+                df = CSV.read(file_path, DataFrame)
+                
+                # Check if required columns exist
+                missing_cols = [col for col in required_columns if !(col in names(df))]
+                if !isempty(missing_cols)
+                    println("[Skipped] $file_path: Missing columns $missing_cols")
+                    continue
+                end
+                
+                if nrow(df) == 0
+                    println("[Skipped] $file_path: Empty file")
+                    continue
+                end
+                
+                row_data = Dict()
+                
+                # A. Process text columns - keep if all values are same, otherwise empty
+                for col in text_cols
+                    unique_vals = unique(df[!, col])
+                    row_data[col] = length(unique_vals) == 1 ? unique_vals[1] : ""
+                end
+                
+                # B. Process standard numeric columns - calculate averages
+                for col in numeric_cols_standard
+                    row_data[col] = mean(skipmissing(df[!, col]))
+                end
+                
+                # C. Process Optional columns - calculate ratios
+                has_poco_cols = all(col in names(df) for col in optional_cols)
+                if has_poco_cols
+                    val_x = mean(skipmissing(df[!, orig_col_x]))
+                    val_y = mean(skipmissing(df[!, orig_col_y]))
+                    val_z = mean(skipmissing(df[!, col_z]))
+                    val_t = mean(skipmissing(df[!, col_t]))
+                    
+                    if val_t != 0
+                        row_data[col_x] = round((val_x / 1000.0) / val_t, digits = 2) # Convert us to ms and divide by call count
+                        row_data[col_y] = round((val_y / 1000.0) / val_t, digits = 2) # Convert us to ms and divide by call count
+                        row_data[col_z] = round(val_z / val_t, digits = 2)            # Divide by call count
+                        row_data[col_t] = val_t
+                    else
+                        row_data[col_x] = 0.00
+                        row_data[col_y] = 0.00
+                        row_data[col_z] = 0.00
+                        row_data[col_t] = 0.00
+                    end
+                else
+                    # Set POCO columns to 0 for non-POCO solvers
+                    row_data[col_x] = 0.00
+                    row_data[col_y] = 0.00
+                    row_data[col_z] = 0.00
+                    row_data[col_t] = 0.00
+                end
+                push!(results, row_data)
+                println("[Processed successfully] $file_path")
+            catch e
+                println("[Error] Error processing file $file_path: $e")
+            end
+        end
+    end
+    
+    # Save results
+    if !isempty(results)
+        # Create DataFrame from results
+        result_df = DataFrame()
+        for (i, row_data) in enumerate(results)
+            if i == 1
+                for (key, value) in row_data
+                    result_df[!, key] = [value]
+                end
+            else
+                push!(result_df, row_data)
+            end
+        end
+        # Select available columns in correct order
+        available_columns = intersect(final_columns, String.(names(result_df)))
+        
+        if !isempty(available_columns)
+            result_df = select(result_df, Symbol.(available_columns))
+            
+            # Define display names
+            display_names = [
+                "map", "solver", "m", "soc", "sol", 
+                raw"$c_{ini}$", raw"$t_{ini}$(ms)", raw"$n_l$", raw"$n_h$", 
+                raw"$\overline{t_u}$(ms)", raw"$\overline{t_{mvc}}$(ms)", 
+                raw"$\overline{h_f}$", raw"$n_{hc}$"
+            ]
+            
+            # Rename columns with corresponding display names
+            rename!(result_df, Symbol.(available_columns) .=> display_names[1:length(available_columns)])
+            
+            output_file = joinpath(main_dir, "main.csv")
+            CSV.write(output_file, result_df)
+            println("\nSuccess! Aggregated results saved to: $output_file")
+        else
+            println("\nNo matching columns found!")
+        end
+    else
+        println("\nNo valid result.csv files found")
+    end
+
+end
+
+function run_aggregate_results(target_dir)
+    """
+    Run all experiments first, then aggregate results once
+    """
+    # 1. Run all experiments first
+    config_files = filter(x -> !contains(x, "common"), glob("$(target_dir)/*.yaml"))
+    
+    println("Running all experiments...")
+    for config_file in config_files
+        println("Processing: $config_file")
+        main("$(target_dir)/common.yaml", config_file)
+    end
+    
+    # 2. Aggregate results only once after all experiments are done
+    println("All experiments completed. Starting aggregation...")
+    aggregate_results("../data/exp/heuristic")
 end

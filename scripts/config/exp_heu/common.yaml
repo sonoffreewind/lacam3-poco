@@ -1,0 +1,19 @@
+root: ../data/exp/heuristic
+time_limit_sec: 10
+time_limit_sec_force: 100
+seed_start: 1
+seed_end: 4
+scen: scen-random
+solver_options:
+  # common
+  - "--checkpoints-duration"
+  - "1"
+  - "--no-scatter"
+  - "--no-refiner"
+  - "--random-insert-prob1"
+  - "0.001"
+  - "--random-insert-prob2"
+  - "0.0"
+  # tested parameters
+  - "--pibt-num"
+  - "10"

@@ -1,136 +1,175 @@
-# lacam3
+# LaCAM3-POCO: Experimental Validation Framework
 
-[![MIT License](http://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
-[![CI](https://github.com/Kei18/lacam3/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Kei18/lacam3/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
 
-This is a code repository of the paper ["Engineering LaCAM*: Towards Real-Time, Large-Scale, and Near-Optimal Multi-Agent Pathfinding"](https://kei18.github.io/lacam3/) (AAMAS-24).
+This repository serves as the **experimental validation framework** for the paper:
+> **"Hostile, Compatible, or Free: A Constant Time Classification of Pairwise Shortest Path Conflicts in Obstacle-Free MAPF"**
 
+It integrates the **[POCO Library](https://github.com/sonoffreewind/poco)** (our core contribution) into the state-of-the-art **LaCAM3** solver to empirically validate the effectiveness of $O(1)$ conflict classification and MVC-based heuristics.
 
-LaCAM(*) is a search-based algorithm for MAPF that can address large instances, e.g., with more than 1k agents.
-If you are interested in academic background, check out [this talk](https://www.cl.cam.ac.uk/seminars/wednesday/video/20231101-1500-t204508.html) and [slides](https://speakerdeck.com/kei18/pathfinding-for-10k-agents-5534305f-45e3-4712-9605-ef112be6a7c5).
-There is [a toy Python implementation](https://github.com/Kei18/py-lacam) as well.
+## 🎯 Purpose
 
-This is the third generation of LaCAM:
-[[lacam; AAAI-23]](https://kei18.github.io/lacam/)
-[[lacam2; IJCAI-23]](https://kei18.github.io/lacam2).
-The evolution is depicted below.
-My prior studies such as [[pibt2; AIJ-22]](https://kei18.github.io/pibt2/) and [[mapf-IR; IROS-21]](https://kei18.github.io/mapf-IR/) (concurrent with [LNS](https://github.com/Jiaoyang-Li/MAPF-LNS)) also play important roles.
+The primary goal of this project is to **experimentally validate the performance** of the POCO library, rather than to propose a new LaCAM variant. 
 
-![](./assets/overview.png)
+By using LaCAM3 as a host platform, we aim to:
+- **Verify Theoretical Claims**: Demonstrate that POCO's $O(1)$ conflict classification translates into tangible search efficiency.
+- **Assess Heuristic Impact**: Measure how MVC-based heuristics (derived from POCO) influence search guidance compared to standard heuristics.
+- **Analyze Trade-offs**: Quantify the computational cost of POCO's conflict detection versus the savings in search node expansions.
 
-## News
+## 🏗️ Project Structure
 
-- Mar. 2025. You can now call lacam3 from Python! Check [pybind](https://github.com/Kei18/lacam3/tree/pybind) branch.
-  Thanks to [@TD0013](https://github.com/TD0013) for creating the interface.
+This repository uses a modular structure to ensure reproducibility:
 
+- **`poco/`**: The core conflict detection library (Git Submodule).
+- **`lacam3/`**: The modified LaCAM3 planner source code supporting multiple heuristics.
+- **`numvc/`**: Encapsulated C++ wrapper for the NuMVC solver (used for exact heuristics).
+- **`scripts/`**: The Julia-based experimental evaluation framework.
 
-## Demo
+## 📦 Solver Variants
 
-[lacam2](https://kei18.github.io/lacam2) (left) vs. lacam3 (right, this repo) 🚀🪄
+We provide four specific solver variants to isolate the impact of different components, consistent with the paper's definitions:
 
-![](./assets/demo.gif)
+| Binary Name | Description | Role in Paper |
+|:---|:---|:---|
+| **`lacam3_fixed`** | **Original LaCAM3** implementation with minimal bug fixes. | **Reference (Original)** |
+| **`lacam3_base`** | **Optimized Baseline**. Includes our pruning optimizations and stability fixes. | **Primary Baseline** |
+| **`lacam3_poco_lb`** | Integrated with POCO's fast **Lower Bound (LB)** heuristic. | **Efficiency Validation** |
+| **`lacam3_poco`** | Integrated with POCO's exact **NuMVC** heuristic. | **Accuracy Validation** |
 
-_random-32-32-20.map, 409 agents, 30sec timeout, on Mac Book Pro (M2 Max)_
+## 🛠️ Build Instructions
 
-## Building
+### Prerequisites
+- CMake ≥ 3.16
+- C++17 compatible compiler (GCC/Clang)
+- Julia ≥ 1.7 (only required for running large-scale benchmarks)
 
-All you need is [CMake](https://cmake.org/) (≥v3.16).
-The code is written in C++(17).
+### Compilation
+```bash
+# 1. Clone with submodules (Important!)
+git clone --recursive https://github.com/sonoffreewind/lacam3-poco.git
 
-First, clone this repo with submodules.
+cd lacam3-poco
 
-```sh
-git clone --recursive https://github.com/Kei18/lacam3.git && cd lacam3
-```
-
-Then, build the project.
-
-```sh
+# 2. Build all variants
 cmake -B build && make -C build
 ```
 
-## Usage
+*The executable binaries will be generated in `build`.*
 
-```sh
-build/main -i assets/random-32-32-10-random-1.scen -m assets/random-32-32-10.map -N 300 -v 3
+## 🧪 Quick Run
+
+You can test individual scenarios directly from the command line:
+
+```bash
+# 1. Run the POCO-enhanced solver (Accuracy Validation)
+./build/lacam3_poco -i assets/random-32-32-10-random-1.scen -m assets/random-32-32-10.map -N 300 -v 1
+
+# 2. Run the Baseline (Baseline Comparison)
+./build/lacam3_base -i assets/random-32-32-10-random-1.scen -m assets/random-32-32-10.map -N 300 -v 1
+
+# 3. Check Help
+./build/lacam3_poco --help
+```
+## ⚙️ Experimental Configuration
+
+### Solver Parameters
+Key parameters for controlled experiments:
+
+- `-N`: Number of agents (for scalability testing)
+- `-t`: Time limit (seconds)
+- `-s`: Random seed (for reproducibility)
+- `-v`: Verbosity level
+- `--no-star`: Disable anytime search
+- `--pibt-num`: Monte-Carlo configuration count
+
+### Experiment Setup
+Customize experiments via YAML files in `scripts/config/`:
+```yaml
+solver_name: "lacam3_poco"
+time_limit_sec: 30
+num_min_agents: 10
+num_max_agents: 500
+maps: ["random-32-32-10", "empty-16-16"]
 ```
 
-The result will be saved in `build/result.txt`.
+## 📊 Reproducing Experiments (Julia)
 
-You can find details of all parameters with:
+We use the Julia framework (inherited from the original LaCAM3) for batch experiments and data analysis.
 
-```sh
-build/main --help
-```
-
-In fact, there are many hyperparameters (though I dislike).
-The default setting is usually an okay level to my knowledge.
-
-## Visualizer
-
-This repository is compatible with [kei18@mapf-visualizer](https://github.com/kei18/mapf-visualizer).
-
-## Experiments
-
-The experimental script is written in Julia ≥1.7.
-Setup may require around 10 minutes.
-
-
-```sh
+### 1. Setup Environment
+```bash
+# Install required Julia packages
 sh scripts/setup.sh
 ```
+**Note**: For detailed Julia environment setup and troubleshooting, please refer to the [original LaCAM3 documentation](https://github.com/Kei18/lacam3#experimental-evaluation).
 
-Edit the config file as you like.
-Examples are in `scripts/config` .
-The evaluation starts by following commands.
-
-```
+### 2. Run Benchmarks
+```julia
+# Start Julia with multi-threading
 julia --project=scripts/ --threads=auto
-> include("scripts/eval.jl"); main("scripts/config/mapf-bench.yaml")
+
+# Load the evaluation script
+include("scripts/eval.jl")
+
+#julia: Single experiment validation
+main("scripts/config/mapf-bench.yaml")
+
+#julia: Comprehensive validation suite
+run_aggregate_results("scripts/config/exp_heu")
 ```
 
-The results will be saved in `../data/`.
+## 🔗 Related Repositories
 
-<details>
-<summary>examples used in the paper</summary>
+- **[POCO](https://github.com/sonoffreewind/poco)**: The standalone C++ library for Pairwise Obstacle-free Conflict Oracle. If you want to use our algorithm in your own solver (e.g., CBS), use this library.
+- **[LaCAM3](https://github.com/Kei18/lacam3)**: The original solver by Keisuke Okumura.
 
-### space utilization optimization
+## 📚 Citation
 
-```jl
-include("scripts/eval.jl"); target="scripts/config/exp_scatter"; foreach(x -> main("$(target)/common.yaml", x), filter(x -> !contains(x, "common"), glob("$(target)/*.yaml")))
+If you use this code or the POCO library in your research, please cite our paper:
+
+```bibtex
+@article{YourName2025POCO,
+  title={Hostile, Compatible, or Free: A Constant Time Classification of Pairwise Shortest Path Conflicts in Obstacle-Free MAPF},
+  author={Your Name and Co-authors},
+  journal={Submitted to Journal/Conference},
+  year={2025}
+}
 ```
 
-### Monte-Carlo configuration generator
-
-```jl
-include("scripts/eval.jl"); target="scripts/config/exp_mccg"; foreach(x -> main("$(target)/common.yaml", x), filter(x -> !contains(x, "common"), glob("$(target)/*.yaml")))
+**Please also cite the original LaCAM3 work:**
+```bibtex
+@inproceedings{okumura_Engineering_2024,
+    author = {Okumura, Keisuke},
+    title = {Engineering LaCAM*: Towards Real-time, Large-scale, and Near-optimal Multi-agent Pathfinding},
+    year = {2024},
+    booktitle = {Proceedings of the 23rd International Conference on Autonomous Agents and Multiagent Systems},
+    pages = {1501–1509},
+    numpages = {9}
+}
+```
+**and the NuMVC work:**
+```bibtex
+  @article{cai_2013_numvc,
+    title = {NuMVC: An Efficient Local Search Algorithm for Minimum Vertex Cover},
+    author = {Cai, S. and Su, K. and Luo, C. and Sattar, A.},
+    journal = {JAIR},
+    volume = {46},
+    year = {2013}
+  }
 ```
 
-</details>
+## 🙏 Acknowledgments & Attribution
 
+This project stands on the shoulders of giants:
 
-## Licence
+1.  **LaCAM3**: The base planner is derived from [Keisuke Okumura's LaCAM3](https://github.com/Kei18/lacam3).
+2.  **NuMVC**: The exact MVC solver (`numvc/`) is adapted from the work of Cai et al.
+    * *Original Source*: [NuMVC Project](https://lcs.ios.ac.cn/~caisw/VC.html)
+    * *Modification*: We encapsulated the original C implementation into a thread-safe C++ class structure (`numvc.cpp/h`) to allow integration into the LaCAM search loop.        
 
-This software is released under the MIT License, see [LICENSE.txt](LICENCE.txt).
+## 📄 License
 
-If possible, please consider contacting the author for commercial use. This is not a restriction, I just want to know about the use as an academic researcher.
-
-## Notes
-
-### install pre-commit for formatting
-
-```sh
-pre-commit install
-```
-
-### simple test
-
-```sh
-ctest --test-dir ./build
-```
-
-### others
-
-- The grid maps and scenarios files are (mostly) from [MAPF benchmarks](https://movingai.com/benchmarks/mapf.html), with some original ones.
-  They are placed in `./scripts/map` and `./scripts/scen`.
-- lacam4? I do not have such a plan currently...
+- **LaCAM3-POCO**: MIT License.
+- **Original LaCAM3**: MIT License.
+- **NuMVC Module**: Adapted from the original implementation by Cai et al.

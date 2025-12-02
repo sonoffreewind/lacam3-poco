@@ -1,0 +1,7 @@
+exec_file: "build/lacam3_poco_lb"
+solver_name: "lacam3_poco_lb"
+num_min_agents: 500
+num_max_agents: 500
+num_interval_agents: 50
+maps:
+  - empty-32-32

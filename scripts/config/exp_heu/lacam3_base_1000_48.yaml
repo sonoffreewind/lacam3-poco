@@ -1,0 +1,7 @@
+exec_file: "build/lacam3_base"
+solver_name: "lacam3_base"
+num_min_agents: 1000
+num_max_agents: 1000
+num_interval_agents: 100
+maps:
+  - empty-48-48

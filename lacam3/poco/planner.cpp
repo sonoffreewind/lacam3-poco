@@ -1,7 +1,9 @@
-#include "../include/planner.hpp"
-
+#include "planner.hpp"
+#include "conflictoracle.hpp"
+#include "numvc.h"
 #include <algorithm>
 #include <iostream>
+#include <chrono>
 
 bool Planner::FLG_SWAP = true;
 bool Planner::FLG_STAR = true;
@@ -48,6 +50,21 @@ Planner::Planner(const Instance *_ins, int _verbose, const Deadline *_deadline,
       cost_initial_solution(-1),
       checkpoints()
 {
+  if (depth == 0) {
+      std::vector<Point> starts(N), goals(N);
+      Vertex *s = nullptr, *g = nullptr;
+      for (size_t i = 0; i < N; i++){
+        s = ins->starts[i]; g = ins->goals[i];
+        starts[i].x = s->x; starts[i].y = s->y;
+        goals[i].x = g->x; goals[i].y = g->y;
+      }
+      current_pos.resize(PIBT_NUM);
+      for (int k = 0; k < PIBT_NUM; ++k) {
+          current_pos[k].resize(N);
+          thread_cos.emplace_back(std::make_unique<ConflictOracle>(starts, goals));
+          thread_cos[k]->set_mvc_solver(numvc);
+      }
+  }
 }
 
 Planner::~Planner()
@@ -64,7 +81,7 @@ Solution Planner::solve()
   update_checkpoints();
 
   // insert initial node
-  H_init = create_highlevel_node(ins->starts, nullptr);
+  H_init = create_highlevel_node_penalty(ins->starts, nullptr, 0);
   OPEN.push_front(H_init);
 
   set_scatter();
@@ -94,6 +111,7 @@ Solution Planner::solve()
       H = FLG_RANDOM_INSERT_INIT_NODE
               ? H_init
               : OPEN[get_random_int(MT, 0, OPEN.size() - 1)];
+      OPEN.push_front(H);
     }
 
     // check lower bounds
@@ -113,18 +131,24 @@ Solution Planner::solve()
       continue;
     }
 
-    // low level search
-    auto L = H->get_next_lowlevel_node(MT);
-    if (L == nullptr) {
+    // adjust the order of applying get_next_lowlevel_node、set_new_config
+    if (H->search_tree.empty() || H->search_tree.front() == nullptr) {
+      if(!H->search_tree.empty()) H->search_tree.pop();
       OPEN.pop_front();
       continue;
     }
-
     // create successors at the high-level search
+    auto L = H->search_tree.front();
     auto Q_to = Config(N, nullptr);
-    auto res = set_new_config(H, L, Q_to);
-    delete L;
-    if (!res) continue;
+    uint penalty = 0;
+    auto res = set_new_config_penalty(H, L, Q_to, penalty);
+    if(!res){
+      delete L;
+      H->search_tree.pop();
+      continue;
+    }
+    // low level search
+    delete H->get_next_lowlevel_node(MT);
 
     // check explored list
     auto iter = EXPLORED.find(Q_to);
@@ -139,7 +163,7 @@ Solution Planner::solve()
       }
     } else {
       // new one -> insert
-      auto H_new = create_highlevel_node(Q_to, H);
+      auto H_new = create_highlevel_node_penalty(Q_to, H, penalty);
       OPEN.push_front(H_new);
     }
   }
@@ -154,14 +178,33 @@ Solution Planner::solve()
   logging();
   auto solution = backtrack(H_goal);        // obtain solution
   for (auto p : EXPLORED) delete p.second;  // memory management
+
+  if (depth == 0 && !thread_cos.empty()) {
+    long long updategraph_time_us = 0;
+    long long cal_mvc_time_us = 0;
+    uint poco_call_count = 0;
+    uint poco_result = 0;
+
+    for (const auto& dg : thread_cos) {
+      updategraph_time_us += dg->get_updategraph_time();
+      cal_mvc_time_us += dg->get_cal_mvc_time();
+      poco_call_count += dg->get_poco_call_count();
+      poco_result += dg->get_poco_result();
+    }
+
+    MSG += "\nupdategraph_time_us=" + std::to_string(updategraph_time_us);
+    MSG += "\ncal_mvc_time_us=" + std::to_string(cal_mvc_time_us);
+    MSG += "\npoco_call_count=" + std::to_string(poco_call_count);
+    MSG += "\npoco_result=" + std::to_string(poco_result);
+  }
   return solution;
 }
 
-HNode *Planner::create_highlevel_node(const Config &Q, HNode *parent)
+HNode *Planner::create_highlevel_node_penalty(const Config &Q, HNode *parent, uint penalty)
 {
   auto g_val =
       (parent == nullptr) ? 0 : parent->g + get_edge_cost(parent->C, Q);
-  auto h_val = heuristic->get(Q);
+  auto h_val = heuristic->get(Q) + penalty;
   auto H_new = new HNode(Q, D, parent, g_val, h_val);
   EXPLORED[Q] = H_new;
   return H_new;
@@ -205,11 +248,15 @@ Solution Planner::backtrack(HNode *H)
   return plan;
 }
 
-bool Planner::set_new_config(HNode *H, LNode *L, Config &Q_to)
+bool Planner::set_new_config_penalty(HNode *H, LNode *L, Config &Q_to, uint &penalty)
 {
   // worker-id, time -> configuration
   auto Q_cands = std::vector<Config>(PIBT_NUM, Config(N, nullptr));
   auto f_vals = std::vector<int>(PIBT_NUM, INT_MAX);
+  auto mvc = std::vector<int>(PIBT_NUM, 0);
+  auto hedges = std::vector<int>(PIBT_NUM, 0);
+  auto cedges = std::vector<int>(PIBT_NUM, 0);
+  bool use_conflict = this->depth == 0 && H_goal == nullptr;
 
   // parallel
   auto worker = [&](int k) {
@@ -217,8 +264,20 @@ bool Planner::set_new_config(HNode *H, LNode *L, Config &Q_to)
     for (auto d = 0; d < L->depth; ++d) Q_cands[k][L->who[d]] = L->where[d];
     // PIBT
     auto res = pibts[k]->set_new_config(H->C, Q_cands[k], H->order);
-    if (res)
-      f_vals[k] = get_edge_cost(H->C, Q_cands[k]) + heuristic->get(Q_cands[k]);
+    if (res){
+      // get the lower bound of vertex cover
+      Config &cand = Q_cands[k];
+      if (use_conflict &&  thread_cos[k]){
+        for (size_t i = 0; i < N; i++)
+          current_pos[k][i] = {cand[i]->x, cand[i]->y};
+#ifdef USE_MVC_LB
+          thread_cos[k]->update_calmvc(current_pos[k], true, mvc[k], hedges[k], cedges[k]);
+#else
+          thread_cos[k]->update_calmvc(current_pos[k], false, mvc[k], hedges[k], cedges[k]);
+#endif
+      }
+      f_vals[k] = get_edge_cost(H->C, cand) + heuristic->get(cand) + mvc[k];
+    }
   };
   if (FLG_MULTI_THREAD && PIBT_NUM > 1) {
     auto threads = std::vector<std::thread>();
@@ -241,6 +300,7 @@ bool Planner::set_new_config(HNode *H, LNode *L, Config &Q_to)
   if (min_f_val < INT_MAX) {
     auto &Q_win = Q_cands[min_f_val_idx];
     std::copy(Q_win.begin(), Q_win.end(), Q_to.begin());
+    penalty = mvc[min_f_val_idx];
     return true;
   } else {
     return false;
@@ -329,6 +389,7 @@ Solution Planner::get_refined_plan(const Solution &plan)
     auto ins_tmp =
         Instance(ins->G, plan[get_random_int(MT_internal, 1, plan.size() - 2)],
                  ins->goals, N);
+    ins_tmp.delete_graph_after_used = false;
     auto deadline_tmp = Deadline(std::min(
         RECURSIVE_TIME_LIMIT,
         deadline == nullptr ? INT_MAX

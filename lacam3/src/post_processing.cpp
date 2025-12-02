@@ -1,7 +1,7 @@
 #include "../include/post_processing.hpp"
 
 #include "../include/dist_table.hpp"
-#include "../include/planner.hpp"
+#include "planner.hpp"
 
 bool is_feasible_solution(const Instance &ins, const Solution &solution,
                           const int verbose)

@@ -1,5 +1,5 @@
 # for MAPF benchmark
-solver_name: "naive-lacam"
+solver_name: "lacam3_poco"
 solver_options:
   - "--no-all"
 num_min_agents: 50
