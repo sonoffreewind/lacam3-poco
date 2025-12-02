@@ -129,10 +129,10 @@ run_aggregate_results("scripts/config/exp_heu")
 If you use this code or the POCO library in your research, please cite our paper:
 
 ```bibtex
-@article{YourName2025POCO,
+@article{Guo2025POCO,
   title={Hostile, Compatible, or Free: A Constant Time Classification of Pairwise Shortest Path Conflicts in Obstacle-Free MAPF},
-  author={Your Name and Co-authors},
-  journal={Submitted to Journal/Conference},
+  author={Lifeng Guo and Changhong Lu},
+  journal={Under Review},
   year={2025}
 }
 ```
