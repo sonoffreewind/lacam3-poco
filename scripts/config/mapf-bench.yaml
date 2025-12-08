@@ -1,4 +1,5 @@
 # for MAPF benchmark
+exec_file: "build/lacam3_poco"
 solver_name: "lacam3_poco"
 solver_options:
   - "--no-all"

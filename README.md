@@ -128,6 +128,7 @@ julia --project=scripts/ --threads=1
 #julia: Comprehensive validation suite
 > run_aggregate_results("scripts/config/exp_heu")
 
+```
 
 ## 🔗 Related Repositories
 
