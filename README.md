@@ -105,19 +105,29 @@ sh scripts/setup.sh
 **Note**: For detailed Julia environment setup and troubleshooting, please refer to the [original LaCAM3 documentation](https://github.com/Kei18/lacam3#experimental-evaluation).
 
 ### 2. Run Benchmarks
+
+**⚠️ Threading Configuration:**
+- **For quick results**: Use `julia --project=scripts/ --threads=auto` to enable multi-threading, but note that this may cause resource competition between test cases.
+- **For precise timing and results**: Use `julia --project=scripts/ --threads=1` to ensure accurate algorithm performance measurement without thread interference.
+
+**Note**: This threading setting affects parallel execution of multiple test cases, not the internal parallelism within each solver algorithm.
+
 ```julia
-# Start Julia with multi-threading
+# Start Julia with multi-threading (faster but less precise)
 julia --project=scripts/ --threads=auto
 
-# Load the evaluation script
-include("scripts/eval.jl")
+# OR start Julia with single-threading (slower but more accurate)
+julia --project=scripts/ --threads=1
+
+#julia: Load the evaluation script
+> include("scripts/eval.jl")
 
 #julia: Single experiment validation
-main("scripts/config/mapf-bench.yaml")
+> main("scripts/config/mapf-bench.yaml")
 
 #julia: Comprehensive validation suite
-run_aggregate_results("scripts/config/exp_heu")
-```
+> run_aggregate_results("scripts/config/exp_heu")
+
 
 ## 🔗 Related Repositories
 
