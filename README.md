@@ -122,10 +122,12 @@ julia --project=scripts/ --threads=1
 #julia: Load the evaluation script
 > include("scripts/eval.jl")
 
-#julia: Single experiment validation
+#julia: 1. Single experiment validation
 > main("scripts/config/mapf-bench.yaml")
 
-#julia: Comprehensive validation suite
+#julia: 2. Comprehensive validation suite
+# ⚠️ IMPORTANT: Delete all files in "../data/exp/heuristic" before running, 
+# otherwise aggregate_results will combine data from previous runs
 > run_aggregate_results("scripts/config/exp_heu")
 
 ```
