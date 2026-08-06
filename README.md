@@ -4,7 +4,7 @@
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
 
 This repository serves as the **experimental validation framework** for the paper:
-> **"Hostile, Compatible, or Free: A Constant Time Classification of Pairwise Shortest Path Conflicts in Obstacle-Free MAPF"**
+> **"Hostile, Compatible, or Free: A constant time classification of pairwise shortest path conflicts in obstacle-free MAPF"**
 
 It integrates the **[POCO Library](https://github.com/sonoffreewind/poco)** (our core contribution) into the state-of-the-art **LaCAM3** solver to empirically validate the effectiveness of $O(1)$ conflict classification and MVC-based heuristics.
 
@@ -142,11 +142,16 @@ julia --project=scripts/ --threads=1
 If you use this code or the POCO library in your research, please cite our paper:
 
 ```bibtex
-@article{Guo2025POCO,
-  title={Hostile, Compatible, or Free: A Constant Time Classification of Pairwise Shortest Path Conflicts in Obstacle-Free MAPF},
-  author={Lifeng Guo and Changhong Lu},
-  journal={Under Review},
-  year={2025}
+@article{GUO2026294,
+  title = {Hostile, Compatible, or Free: A constant time classification of pairwise shortest path conflicts in obstacle-free MAPF},
+  author = {Lifeng Guo and Hang Yuan and Changhong Lu},
+  journal = {Discrete Applied Mathematics},
+  volume = {391},
+  pages = {294--316},
+  year = {2026},
+  issn = {0166-218X},
+  doi = {10.1016/j.dam.2026.04.047},
+  url = {https://www.sciencedirect.com/science/article/pii/S0166218X26002763}
 }
 ```
 
